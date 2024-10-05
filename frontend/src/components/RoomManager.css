@@ -1,21 +1,22 @@
 .room-manager-container {
-    width: 300px;
-    margin: 0 auto;
-    padding: 20px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    text-align: center;
-  }
-  
-  .room-manager-container input[type="text"] {
-    width: 100%;
-    padding: 8px;
-    margin-bottom: 10px;
-  }
-  
-  .room-manager-container button {
-    padding: 10px 20px;
-    margin-top: 10px;
-    cursor: pointer;
-  }
-  
+  width: 300px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  text-align: center;
+
+  margin-top: 200px;
+}
+
+.room-manager-container input[type="text"] {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.room-manager-container button {
+  padding: 10px 20px;
+  margin-top: 10px;
+  cursor: pointer;
+}

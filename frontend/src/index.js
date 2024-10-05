@@ -8,17 +8,17 @@ import { SocketProvider } from "./context";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
-    <Auth0Provider
-      domain="dev-4cu1mbxfefi76if6.us.auth0.com"
-      clientId="IOtQc82Emmg6E2uaLMcwbUCOeVDedykb"
-      authorizationParams={{
-        redirect_uri: window.location.origin,
-      }}
-    >
-      <SocketProvider>
-          <App />
-      </SocketProvider>
-    </Auth0Provider>
+  <Auth0Provider
+    domain={process.env.REACT_APP_AUTH0_DOMAIN}
+    clientId={process.env.REACT_APP_AUTH0_CLIENT_ID}
+    authorizationParams={{
+      redirect_uri: window.location.origin,
+    }}
+  >
+    <SocketProvider>
+      <App />
+    </SocketProvider>
+  </Auth0Provider>
 );
 
 // If you want to start measuring performance in your app, pass a function

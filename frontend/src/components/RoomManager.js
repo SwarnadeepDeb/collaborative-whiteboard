@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSocket } from "../context";
+import "./RoomManager.css";
 
 function RoomManager() {
   const { user } = useAuth0();
