@@ -28,6 +28,12 @@ function GroupChat() {
       console.log(temp);
     }
   };
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault(); 
+      handleSendMessage();
+    }
+  };
 
   useEffect(() => {
     Id.socket.on("handleSendMessage", ({ temp: newMessages }) => {
@@ -77,6 +83,7 @@ function GroupChat() {
           className="chat-input"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Type a message..."
         />
         <button className="chat-send-button" onClick={handleSendMessage}>

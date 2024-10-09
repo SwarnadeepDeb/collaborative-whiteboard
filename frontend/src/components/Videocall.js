@@ -59,11 +59,15 @@ async function hangup() {
     pc.close();
     pc = null;
   }
+  try{
   localStream.getTracks().forEach((track) => track.stop());
   localStream = null;
   startButton.current.disabled = false;
   hangupButton.current.disabled = true;
   muteAudButton.current.disabled = true;
+  }catch(e){
+    console.log(e);
+  }
 }
 
 function Videocall() {
@@ -98,7 +102,7 @@ function Videocall() {
           break;
         case "ready":
           // A second tab joined. This tab will initiate a call unless in a call already.
-          if (pc) {
+          if (pc) { 
             console.log("already in call, ignoring");
             return;
           }

@@ -13,6 +13,7 @@ root.render(
     clientId={process.env.REACT_APP_AUTH0_CLIENT_ID}
     authorizationParams={{
       redirect_uri: window.location.origin,
+      // redirect_uri: 'http://localhost:3000'
     }}
   >
     <SocketProvider>

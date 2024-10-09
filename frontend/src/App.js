@@ -3,6 +3,7 @@ import RoomManager from "./components/RoomManager";
 import ClassRoom from "./components/ClassRoom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Loading from './components/Loading.js';
 import "./App.css";
 
 function App() {
@@ -15,7 +16,7 @@ function App() {
   }, [isAuthenticated, isLoading, loginWithRedirect]);
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <Loading />;
   }
   return (
     <>

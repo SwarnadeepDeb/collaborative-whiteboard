@@ -15,16 +15,28 @@ import {
   Label,
   Transformer,
   Tag,
+  Image as KonvaImage,
+  Group,
 } from "react-konva";
 import { ACTIONS } from "./constants";
+import { useAuth0 } from "@auth0/auth0-react";
+// import useImage from "react-use-image";
 
 function Whiteboard({ users, isAdmin }) {
-  console.log("entered in the whiteboard");
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  const layerRef = useRef(null);
+  const [backgroundImage, setBackgroundImage] = useState(null);
+  const [backgroundTiles, setBackgroundTiles] = useState([]);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const containerRef = useRef(null);
   const transformerRef = useRef();
   const stageRef = useRef();
   const Id = useSocket();
+  const { user } = useAuth0();
 
+  const [otherUsersPointers, setOtherUsersPointers] = useState({});
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [action, setAction] = useState(ACTIONS.SELECT);
   const [fillColor, setFillColor] = useState("#ff0000");
@@ -37,22 +49,193 @@ function Whiteboard({ users, isAdmin }) {
   const [textInput, setTextInput] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [target, setTarget] = useState(null);
   const isDraggable = action === ACTIONS.SELECT;
 
   // Undo/Redo states
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
+  const loadImage = (src) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = src;
+      img.onload = () => resolve(img);
+      img.onerror = (err) => reject(err);
+    });
+  };
+
   const toggleDropdown = () => {
     setIsDropdownOpen((prev) => !prev);
   };
+
+  const getUserColor = (username) => {
+    const colors = [
+      "#1abc9c",
+      "#3498db",
+      "#9b59b6",
+      "#e74c3c",
+      "#f39c12",
+      "#2ecc71",
+    ];
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) {
+      hash = username.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash % colors.length);
+    return colors[index];
+  };
+
+  const handleSelectChange = (changeProperty) => {
+    console.log(action, target);
+    if (action === ACTIONS.SELECT && target) {
+      let shapeIndex = shapes.findIndex((shape) => shape.id === target.id());
+
+      if (shapeIndex === -1) {
+        if (target.parent) {
+          shapeIndex = shapes.findIndex(
+            (shape) => shape.id === target.parent.id()
+          );
+        }
+      }
+      if (shapeIndex === -1) return;
+      let updatedShape;
+      if (changeProperty === "fillColor") {
+        updatedShape = {
+          ...shapes[shapeIndex],
+          fillColor: fillColor,
+        };
+      } else if (changeProperty === "strokeWidth") {
+        updatedShape = {
+          ...shapes[shapeIndex],
+          strokeWidth: strokeWidth,
+          fontSize: strokeWidth + 5,
+        };
+      } else {
+        updatedShape = {
+          ...shapes[shapeIndex],
+          strokeColor: strokeColor,
+        };
+      }
+      console.log(updatedShape);
+      const updatedShapes = shapes.map((shape, index) =>
+        index === shapeIndex ? updatedShape : shape
+      );
+      setShapes(updatedShapes);
+
+      Id.socket.emit("shapeUpdated", { shapes: shapes }, Id.roomId);
+    }
+  };
+  const [actionImages, setActionImages] = useState({});
+
+  useEffect(() => {
+    const loadActionImages = async () => {
+      const images = {
+        [ACTIONS.SELECT]: await loadImage("/images/arrow-pointer-solid.svg"),
+        [ACTIONS.CIRCLE]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.ELLIPSE]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.RECTANGLE]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.SCRIBBLE]: await loadImage("/images/pen-solid.svg"),
+        [ACTIONS.ARROW]: await loadImage("/images/pen-solid.svg"),
+        [ACTIONS.STAR]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.RING]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.ARC]: await loadImage("/images/crosshairs-solid.svg"),
+        [ACTIONS.TEXT]: await loadImage("/images/i-cursor-solid.svg"),
+        [ACTIONS.LABEL]: await loadImage("/images/i-cursor-solid.svg"),
+        [ACTIONS.LINE]: await loadImage("/images/pen-solid.svg"),
+        [ACTIONS.DRAG]: await loadImage("/images/hand-regular.svg"),
+      };
+      setActionImages(images); 
+    };
+
+    loadActionImages();
+  }, []);
+
+  useEffect(() => {
+    Id.socket.on("pointerPositionUpdate", (obj) => {
+      console.log(obj.message.email);
+      if (obj.message.email) {
+        setOtherUsersPointers((prevState) => ({
+          ...prevState,
+          [obj.message.email]: {
+            x: obj.message.x,
+            y: obj.message.y,
+            action: obj.message.action,
+          },
+        }));
+      }
+    });
+
+    return () => {
+      Id.socket.off("pointerPositionUpdate");
+    };
+  }, [Id.socket]);
+
+  useEffect(() => {
+    handleSelectChange("fillColor");
+  }, [fillColor]);
+  useEffect(() => {
+    handleSelectChange("strokeWidth");
+  }, [strokeWidth]);
+
+  useEffect(() => {
+    handleSelectChange("strokeColor");
+  }, [strokeColor]);
+
+  useEffect(() => {
+    imageLoaded &&
+      backgroundImage &&
+      setBackgroundTiles(renderTiledBackground()); 
+    console.log("inside handleDragMove useEffect");
+  }, [position, scale, imageLoaded, backgroundImage]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", keyDownHandler);
+
+    return () => {
+      window.removeEventListener("keydown", keyDownHandler);
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new window.Image();
+    img.src = process.env.PUBLIC_URL + "/images/gridImage.png";
+
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      setBackgroundImage(img);
+      setImageLoaded(true);
+      if (layerRef.current) {
+        layerRef.current.batchDraw();
+      }
+    };
+
+    img.onerror = () => {
+      console.error("Failed to load the image.");
+    };
+  }, []);
+
+  useEffect(() => {
+    setDeleteItem(null);
+    setTarget(null);
+  }, [action]);
 
   useEffect(() => {
     document
       .querySelectorAll(".icon-btn")
       ?.forEach((btn) => btn?.classList.remove("active"));
+
     if (action) {
       document.getElementById(`${action}`)?.classList.add("active");
+    }
+
+    Object.values(ACTIONS).forEach((act) => {
+      document.getElementById("whiteboard")?.classList.remove(act);
+    });
+
+    if (action && action === action.toUpperCase()) {
+      document.getElementById("whiteboard")?.classList.add(action);
     }
   }, [action]);
 
@@ -76,12 +259,34 @@ function Whiteboard({ users, isAdmin }) {
 
   // Receiving and Handling Shapes from Socket.io
   useEffect(() => {
-    // Listen for new shapes
     Id.socket.on("shapeCreated", ({ shape }) => {
+      if (shape.type === "image") {
+        const img = new window.Image();
+        img.src = shape.src; // Use the base64 string to load the image
+
+        img.onload = () => {
+          const newImage = {
+            ...shape,
+            image: img, 
+            nodeRef: React.createRef(),
+          };
+
+          setShapes((prevShapes) => [...prevShapes, newImage]);
+        };
+
+        img.onerror = () => {
+          console.error("Error loading image on the receiving side");
+        };
+
+        return;
+      }
+
+      // Handle non-image shapes
       const newShape = {
         ...shape,
-        nodeRef: React.createRef(), // Initialize nodeRef only once when the shape is received
+        nodeRef: React.createRef(),
       };
+
       setShapes((prevShapes) => [...prevShapes, newShape]);
     });
 
@@ -131,7 +336,6 @@ function Whiteboard({ users, isAdmin }) {
 
     // Listen for shape transformation (resize, rotate) from others
     Id.socket.on("shapeTransformed", ({ updatedShape }) => {
-      console.log("Got it inside shapeTransformed!");
       setShapes((prevShapes) =>
         prevShapes.map((shape) => {
           if (shape.id === updatedShape.id) {
@@ -156,7 +360,41 @@ function Whiteboard({ users, isAdmin }) {
 
     // Listen for shape drag from others
     Id.socket.on("shapeDragged", ({ updatedShape }) => {
-      console.log("Got it inside shapeDragged!");
+      if (updatedShape.type === "image") {
+        const img = new window.Image();
+        img.src = updatedShape.src; // Use the base64 string to load the image
+
+        img.onload = () => {
+          setShapes((prevShapes) =>
+            prevShapes.map((shape) => {
+              if (shape.id === updatedShape.id) {
+                return {
+                  ...shape,
+                  image: img,
+                  x: updatedShape.x,
+                  y: updatedShape.y,
+                  width: updatedShape.width,
+                  height: updatedShape.height,
+                  points: updatedShape.points,
+                  fillColor: updatedShape.fillColor,
+                  strokeColor: updatedShape.strokeColor,
+                  tool: updatedShape.tool,
+                  text: updatedShape.tool,
+                };
+              } else {
+                return shape;
+              }
+            })
+          );
+        };
+
+        img.onerror = () => {
+          console.error("Error loading image on the receiving side");
+        };
+
+        // Early return to avoid executing the rest of the code for images
+        return;
+      }
       setShapes((prevShapes) =>
         prevShapes.map((shape) => {
           if (shape.id === updatedShape.id) {
@@ -178,36 +416,6 @@ function Whiteboard({ users, isAdmin }) {
         })
       );
     });
-    // // Listen for undo events
-    // Id.socket.on("undo", ({ shapes: newShapes }) => {
-    //   // const updatedShapes = newShapes.map((shape) => ({
-    //   //   ...shape,
-    //   //   nodeRef:
-    //   //     shapes.find((s) => s.id === shape.id)?.nodeRef || React.createRef(), // Maintain the original nodeRef
-    //   // }));
-    //   // setShapes(updatedShapes);
-    //   if (undoStack.length < 2) return; // Ensure at least two states exist
-    //   const previousState = undoStack[undoStack.length - 2]; // Get the second-to-last state
-    //   setRedoStack([shapes, ...redoStack]); // Push the current state to the redoStack
-    //   setShapes(previousState); // Restore the second-to-last state
-    //   setUndoStack(undoStack.slice(0, -1)); // Remove the last item from undoStack
-    // });
-
-    // // Listen for redo events
-    // Id.socket.on("redo", ({ shapes: newShapes }) => {
-    //   // const updatedShapes = newShapes.map((shape) => ({
-    //   //   ...shape,
-    //   //   nodeRef:
-    //   //     shapes.find((s) => s.id === shape.id)?.nodeRef || React.createRef(), // Maintain the original nodeRef
-    //   // }));
-    //   // setShapes(updatedShapes);
-
-    //   if (redoStack.length === 0) return; // Ensure there's something to redo
-    //   const nextState = redoStack[0]; // Get the next state to restore
-    //   setUndoStack([...undoStack, nextState]); // Push current shapes to undoStack
-    //   setShapes(nextState); // Restore the next state
-    //   setRedoStack(redoStack.slice(1)); // Remove the first item from redoStack
-    // });
 
     Id.socket.on(
       "undo",
@@ -217,7 +425,6 @@ function Whiteboard({ users, isAdmin }) {
         shapes: newShapes,
       }) => {
         // Update the local stacks and shapes with the received data
-        console.log("I invoked in the undo event");
         setUndoStack(newUndoStack);
         setRedoStack(newRedoStack);
         setShapes(newShapes);
@@ -233,7 +440,6 @@ function Whiteboard({ users, isAdmin }) {
         shapes: newShapes,
       }) => {
         // Update the local stacks and shapes with the received data
-        console.log("I invoked in the redo event");
         setUndoStack(newUndoStack);
         setRedoStack(newRedoStack);
         setShapes(newShapes);
@@ -241,7 +447,6 @@ function Whiteboard({ users, isAdmin }) {
     );
 
     Id.socket.on("shapesChange", ({ shapes: newShapes }) => {
-      console.log("I also invoked inside event listener shapesChange");
       const updatedShapes = newShapes.map((shape) => ({
         ...shape,
         nodeRef:
@@ -270,39 +475,39 @@ function Whiteboard({ users, isAdmin }) {
   useEffect(() => {
     shapes.forEach((shape) => {
       const node = shape.nodeRef.current;
-      if (node) {
-        node.on("transform", onTransform);
-        node.on("dragmove", onDragMove);
+      if (node && shape.tool !== "IMAGE") {
+        node.on("transform", handleOnTransform);
+        node.on("dragmove", handleOnDragMove);
       }
     });
 
     return () => {
       shapes.forEach((shape) => {
         const node = shape.nodeRef.current;
-        if (node) {
-          node.off("transform", onTransform);
-          node.off("dragmove", onDragMove);
+        if (node && shape.tool !== "IMAGE") {
+          node.off("transform", handleOnTransform);
+          node.off("dragmove", handleOnDragMove);
         }
       });
     };
-  }, [shapes]); // Runs whenever shapes change
+  }, [shapes]); 
 
   useEffect(() => {
-    // Listen for canvas zoom updates from other users
+    // Listen canvas zoom updates from other users
     Id.socket.on("updateCanvasZoom", ({ scale, position }) => {
       const stage = stageRef.current;
 
-      // Apply the received scale and position
+      // received scale and position
       stage.scale({ x: scale, y: scale });
       stage.position(position);
       stage.batchDraw();
     });
 
-    // Listen for canvas drag updates from other users
+    // Listen canvas drag updates from other users
     Id.socket.on("updateCanvasDrag", ({ position }) => {
       const stage = stageRef.current;
 
-      // Apply the received position
+      //received position
       stage.position(position);
       stage.batchDraw();
     });
@@ -315,68 +520,58 @@ function Whiteboard({ users, isAdmin }) {
   }, []);
 
   const handleUserAction = (adminAction) => {
-    console.log(Id.roomId);
-    if (!selectedUser) return;
+
+    if (!selectedUser) return; // Ensure a user is selected before proceeding
+
     switch (adminAction) {
       case "call":
         break;
+
       case "quitCall":
         break;
-      case "grantPermission":
-        Id.socket.emit("grantPermission", Id.currentUser);
+
+      case "grantPermission": {
+        Id.socket.emit("shapeUpdated", { shapes: shapes }, Id.roomId);
+        Id.socket.emit("grantPermission", selectedUser); // Grant permission to selected user
         break;
-      case "revokePermission":
-        Id.socket.emit("revokePermission", Id.currentUser);
+      }
+
+      case "revokePermission": {
+        Id.socket.emit("revokePermission", selectedUser); // Revoke permission from selected user
         break;
-      case "kickUser":
-        Id.socket.emit("disconnectUser", Id.roomId, Id.currentUser.socketId);
+      }
+
+      case "kickUser": {
+        Id.socket.emit("disconnectUser", Id.roomId, selectedUser.socketId); // Disconnect selected user
         break;
+      }
+
       default:
         break;
     }
   };
 
-  // const handleUndo = () => {
-  //   if (undoStack.length < 2) return; // Ensure at least two states exist
-  //   const previousState = undoStack[undoStack.length - 2]; // Get the second-to-last state
-  //   setRedoStack([shapes, ...redoStack]); // Push the current state to the redoStack
-  //   setShapes(previousState); // Restore the second-to-last state
-  //   setUndoStack(undoStack.slice(0, -1)); // Remove the last item from undoStack
-
-  //   Id.socket.emit("undo", { shapes: previousState , }, Id.roomId);
-  // };
-
-  // const handleRedo = () => {
-  //   if (redoStack.length === 0) return; // Ensure there's something to redo
-  //   const nextState = redoStack[0]; // Get the next state to restore
-  //   setUndoStack([...undoStack, nextState]); // Push current shapes to undoStack
-  //   setShapes(nextState); // Restore the next state
-  //   setRedoStack(redoStack.slice(1)); // Remove the first item from redoStack
-
-  //   Id.socket.emit("redo", { shapes: nextState }, Id.roomId);
-  // };
-
   const handleUndo = () => {
-    setAction(ACTIONS.UNDO);
     if (undoStack.length < 2) return; // Ensure at least two states exist
 
-    const previousState = undoStack[undoStack.length - 2]; // Get the second-to-last state
+    // Get the second-to-last state and the last state
+    const previousState = undoStack[undoStack.length - 2];
+    const lastState = undoStack[undoStack.length - 1];
 
-    // Update redo stack with the current shapes state
-    setRedoStack([undoStack[undoStack.length - 1], ...redoStack]);
+    // Update the redo stack
+    setRedoStack((prevRedoStack) => [lastState, ...prevRedoStack]);
 
-    // Update shapes to the previous state
+    // Update the shapes to the previous state
     setShapes(previousState);
 
-    // Update undo stack by removing the last state
-    setUndoStack(undoStack.slice(0, -1));
+    // Update the undo stack
+    setUndoStack((prevUndoStack) => prevUndoStack.slice(0, -1));
 
-    // Emit the updated stacks and shapes to other clients
     Id.socket.emit(
       "undo",
       {
         undoStack: undoStack.slice(0, -1),
-        redoStack: [undoStack[undoStack.length - 1], ...redoStack],
+        redoStack: [lastState, ...redoStack],
         shapes: previousState,
       },
       Id.roomId
@@ -384,7 +579,6 @@ function Whiteboard({ users, isAdmin }) {
   };
 
   const handleRedo = () => {
-    setAction(ACTIONS.REDO);
     if (redoStack.length === 0) return; // Ensure there's something to redo
 
     const nextState = redoStack[0]; // Get the next state to restore
@@ -398,7 +592,6 @@ function Whiteboard({ users, isAdmin }) {
     // Update redo stack by removing the first state
     setRedoStack(redoStack.slice(1));
 
-    // Emit the updated stacks and shapes to other clients
     Id.socket.emit(
       "redo",
       {
@@ -413,10 +606,15 @@ function Whiteboard({ users, isAdmin }) {
   // Pointer Down Event
   let startShapes;
   const onPointerDown = (e) => {
+    const { x, y } = stageRef.current.getRelativePointerPosition();
+    Id.socket.emit(
+      "pointerPosition",
+      { x, y, action, email: user.email },
+      Id.roomId
+    );
     if (action === ACTIONS.DRAG) return;
     startShapes = [...shapes];
-    // const { x, y } = e.target.getStage().getPointerPosition();
-    const { x, y } = stageRef.current.getRelativePointerPosition();
+
     setIsDrawing(true);
 
     if (action === ACTIONS.GROUPSELECT) {
@@ -429,19 +627,24 @@ function Whiteboard({ users, isAdmin }) {
         { selectionBox: initialSelectionBox },
         Id.roomId
       );
-    } else if (action !== ACTIONS.SELECT) {
+    } else if (
+      action !== ACTIONS.SELECT &&
+      action !== ACTIONS.TEXT &&
+      action !== ACTIONS.LABEL
+    ) {
       const shape = {
         id: `${action}-${Date.now()}`,
         x,
         y,
-        width: 0,
-        height: 0,
+        width: action === ACTIONS.TEXT || action === ACTIONS.LABEL ? 150 : 0,
+        height: action === ACTIONS.TEXT || action === ACTIONS.LABEL ? 50 : 0,
         points: [x, y, x, y],
         fillColor,
         strokeColor,
         strokeWidth,
         tool: action,
         text: action === ACTIONS.TEXT ? "Sample Text" : "",
+        fontSize: 20,
         nodeRef: React.createRef(), // Initialize nodeRef once when the shape is created
       };
       setShapes([...shapes, shape]);
@@ -457,10 +660,15 @@ function Whiteboard({ users, isAdmin }) {
 
   // Pointer Move Event
   const onPointerMove = (e) => {
+    const { x, y } = stageRef.current.getRelativePointerPosition();
+    Id.socket.emit(
+      "pointerPosition",
+      { x, y, action, email: user.email },
+      Id.roomId
+    );
     if (!isDrawing) return;
 
     // const { x, y } = e.target.getStage().getPointerPosition();
-    const { x, y } = stageRef.current.getRelativePointerPosition();
     if (action === ACTIONS.GROUPSELECT && selectionBox) {
       const updatedBox = {
         ...selectionBox,
@@ -482,7 +690,7 @@ function Whiteboard({ users, isAdmin }) {
             shape.points = [shape.x, shape.y, x, y];
           } else if (shape.tool === ACTIONS.SCRIBBLE) {
             shape.points = [...shape.points, x, y];
-          } else {
+          } else if (action !== ACTIONS.TEXT && action !== ACTIONS.LABEL) {
             shape.width = x - shape.x;
             shape.height = y - shape.y;
           }
@@ -508,7 +716,6 @@ function Whiteboard({ users, isAdmin }) {
       JSON.stringify(startShapes) !== JSON.stringify(shapes);
 
     if (shapesChanged) {
-      console.log("I invoked inside shapeChanged");
       // If shapes have changed, push the current state to the undo stack
       let newUndoStack;
       newUndoStack = [...undoStack, shapes];
@@ -544,7 +751,6 @@ function Whiteboard({ users, isAdmin }) {
       );
       transformerRef.current.getLayer().batchDraw();
 
-      // Emit selection complete to other users
       Id.socket.emit(
         "selectionComplete",
         {
@@ -572,49 +778,84 @@ function Whiteboard({ users, isAdmin }) {
 
   const onClick = (e) => {
     const target = e.target;
+    console.log(target);
+    setTarget(target);
+    if (!target.id()) {
+      setDeleteItem(target.parent?.id());
+    }
+    if (target.id()) setDeleteItem(target.id());
+    const { x, y } = stageRef.current.getRelativePointerPosition();
+    if (
+      action !== ACTIONS.SELECT &&
+      (action === ACTIONS.TEXT || action === ACTIONS.LABEL)
+    ) {
+      const shape = {
+        id: `${action}-${Date.now()}`,
+        x,
+        y,
+        width: action === ACTIONS.TEXT || action === ACTIONS.LABEL ? 150 : 0,
+        height: action === ACTIONS.TEXT || action === ACTIONS.LABEL ? 50 : 0,
+        points: [x, y, x, y],
+        fillColor,
+        strokeColor,
+        strokeWidth,
+        tool: action,
+        text: action === ACTIONS.TEXT ? "Sample Text" : "",
+        fontSize: 20,
+        nodeRef: React.createRef(), // Initialize nodeRef once when the shape is created
+      };
+      setShapes([...shapes, shape]);
+
+      // Emit new shape to other users without nodeRef
+      Id.socket.emit(
+        "shapeCreated",
+        { shape: { ...shape, nodeRef: null } },
+        Id.roomId
+      );
+    }
     if (action === ACTIONS.SELECT) {
+      transformerRef.current.nodes([]);
+      if (target.attrs.image) return;
+      let shapeIndex = shapes.findIndex((shape) => shape.id === target.id());
+      if (shapeIndex === -1) {
+        if (target.parent) {
+          shapeIndex = shapes.findIndex(
+            (shape) => shape.id === target.parent.id()
+          );
+        }
+      }
+      if (shapeIndex === -1) return;
+      const selectedShape = shapes[shapeIndex];
+      const updatedShapes = [
+        ...shapes.filter((_, index) => index !== shapeIndex), // Exclude the selected shape
+        selectedShape, // Add the selected shape at the end (which will be on top)
+      ];
+
+      // Update state with the new shapes order
+      setShapes(updatedShapes);
+
+      // Attach the transformer to the selected shape
       transformerRef.current.nodes([target]);
-      transformerRef.current.getLayer().batchDraw();
+      transformerRef.current.getLayer().batchDraw(); // Redraw the layer
     } else {
       return;
     }
     Id.socket.emit("onClick", { shapes, target }, Id.roomId);
   };
 
-  // Handle text editing
-  // const handleDoubleClick = (e) => {
-  //   const shapeId = e.target.id();
-  //   console.log(shapeId);
-  //   const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
-  //   const shape = shapes[shapeIndex];
-  //   // console.log(shape);
-
-  //   if (shape?.tool === ACTIONS.TEXT ) {
-  //     setEditingText(shapeId);
-  //     setTextInput(shape.text || "");
-  //     Id.socket.emit("textUpdated", { shapeId, text: shape.text }, Id.roomId);
-
-  //   }
-  //   else if( shape?.tool === ACTIONS.LABEL)
-  //   {
-  //     setEditingText(shapeId);
-  //     setTextInput(shape.text || "");
-  //     Id.socket.emit("textUpdated", { shapeId, text: shape.text }, Id.roomId);
-  //   }
-  // };
   const handleDoubleClick = (e) => {
     // Get the target shape
+    setAction(ACTIONS.SELECT);
     const target = e.target.getParent(); // Get the parent Label
     let shapeId = target.id(); // Get the ID from the Label
-    if(!shapeId)
-    {
+    if (!shapeId) {
       shapeId = e.target.id();
     }
-    console.log('Double-clicked shape ID:', shapeId); // Log the shape ID
-    
+    console.log("Double-clicked shape ID:", shapeId); // Log the shape ID
+
     const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
     const shape = shapes[shapeIndex];
-  
+
     if (shape?.tool === ACTIONS.TEXT) {
       setEditingText(shapeId);
       setTextInput(shape.text || "");
@@ -625,10 +866,7 @@ function Whiteboard({ users, isAdmin }) {
       Id.socket.emit("textUpdated", { shapeId, text: shape.text }, Id.roomId);
     }
   };
-  // const handleTextChange = (e) => {
-  //   setTextInput(e.target.value);
-  //   Id.socket.emit("handleTextChange", { textInput }, Id.roomId);
-  // };
+
 
   const handleTextChange = (e) => {
     setTextInput(e.target.value);
@@ -650,251 +888,144 @@ function Whiteboard({ users, isAdmin }) {
         { shapeId: editingText, text: textInput },
         Id.roomId
       );
-      // Id.socket.current.emit(
-      //   "textUpdated",
-      //   { shapeId: editingText, text: textInput },
-      //   Id.roomId
-      // );
     }
     setEditingText(null);
     setTextInput("");
   };
 
-  // // Listen for transformations (resize/rotate)
-  // const onTransform = (e) => {
-  //   const node = e.target;
-  //   console.log(node);
-  //   const shapeId = node.id();
-  //   const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
-  //   if (shapeIndex === -1) return;
-
-  //   // const shape = {
-  //   //   id: `${action}-${Date.now()}`,
-  //   //   x,
-  //   //   y,
-  //   //   width: 0,
-  //   //   height: 0,
-  //   //   points: [x, y, x, y],
-  //   //   fillColor,
-  //   //   strokeColor,
-  //   //   tool: action,
-  //   //   text: action === ACTIONS.TEXT ? "Sample Text" : "",
-  //   //   nodeRef: React.createRef(), // Initialize nodeRef once when the shape is created
-  //   // };
-
-  //   const updatedShape = {
-  //     ...shapes[shapeIndex],
-  //     x: node.x(),
-  //     y: node.y(),
-  //     width: node.width(),
-  //     height: node.height(),
-  //     // scaleX: node.scaleX(),
-  //     // scaleY: node.scaleY(),
-  //     // rotation: node.rotation(),
-  //   };
-
-  //   const updatedShapes = shapes.map((shape, index) =>
-  //     index === shapeIndex ? updatedShape : shape
-  //   );
-
-  //   setShapes(updatedShapes);
-  //   // Id.socket.current.emit("shapeTransformed", { updatedShape }, Id.roomId);
-  //   Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
-  //   console.log("Hiiiiiiiiiiiiiiiiiiiiiiiiii!");
-  // };
-
-  // Listen for transformations (resize/rotate)
-  // const onTransform = (e) => {
-  //   const node = e.target;
-  //   const shapeId = node.id();
-  //   const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
-  //   if (shapeIndex === -1) return;
-
-  //   const updatedShape = {
-  //     ...shapes[shapeIndex],
-  //     x: node.x(),
-  //     y: node.y(),
-  //     width: node.width() * node.scaleX(), // Capture the transformed width
-  //     height: node.height() * node.scaleY(), // Capture the transformed height
-  //     scaleX: node.scaleX(), // Store the scale factor
-  //     scaleY: node.scaleY(), // Store the scale factor
-  //     rotation: node.rotation(), // Capture the rotation
-  //   };
-
-  //   const updatedShapes = shapes.map((shape, index) =>
-  //     index === shapeIndex ? updatedShape : shape
-  //   );
-
-  //   setShapes(updatedShapes);
-  //   Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
-  // };
-
-  // const onTransform = (e) => {
-  //   const node = e.target;
-  //   const shapeId = node.id();
-  //   const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
-  //   if (shapeIndex === -1) return;
-
-  //   // Get the shape's node attributes and directly send them
-  //   const updatedShape = {
-  //     ...shapes[shapeIndex],
-  //     x: node.x(),
-  //     y: node.y(),
-  //     scaleX: node.scaleX(), // Directly capture scaleX
-  //     scaleY: node.scaleY(), // Directly capture scaleY
-  //     rotation: node.rotation(),
-  //     width: node.width() * node.scaleX(), // Capture width
-  //     height: node.height() * node.scaleY(), // Capture height if applicable
-  //     radius: node.radius ? node.radius() : undefined, // Capture radius if it's a circle
-  //     points: node.points ? node.points() : undefined, // For lines/arrows
-  //     // Handle Ellipse-specific properties
-  //     radiusX: node.radiusX ? node.radiusX() * node.scaleX() : undefined, // Ellipse radiusX
-  //     radiusY: node.radiusY ? node.radiusY() * node.scaleY() : undefined, // Ellipse radiusY
-  //   };
-
-  //   const updatedShapes = shapes.map((shape, index) =>
-  //     index === shapeIndex ? updatedShape : shape
-  //   );
-
-  //   setShapes(updatedShapes);
-
-  //   // Emit the updated shape to the server and other users
-  //   Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
-  // };
-
-  const onTransform = (e) => {
+  const handleOnTransform = (e) => {
     const node = e.target;
     console.log(node);
     const shapeId = node.id();
-    const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    let shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    console.log(shapeIndex);
+    if (shapeIndex === -1) {
+      if (node.parent) {
+        shapeIndex = shapes.findIndex((shape) => shape.id === node.parent.id());
+      }
+    }
     if (shapeIndex === -1) return;
+    node.rotation(0);
+    if (
+      shapes[shapeIndex].tool == "CIRCLE" ||
+      shapes[shapeIndex].tool == "ELLIPSE" ||
+      shapes[shapeIndex].tool == "RECTANGLE" ||
+      shapes[shapeIndex].tool == "TEXT" ||
+      shapes[shapeIndex].tool == "LABEL"
+    ) {
+      // Get the current scale factors
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
 
-    // Get the current scale factors
+      // Prepare the updated shape object
+      let updatedShape = {
+        ...shapes[shapeIndex],
+        x: node.x(),
+        y: node.y(),
+        rotation: node.rotation(),
+        scaleX: scaleX, // Store the current scale factors
+        scaleY: scaleY,
+      };
+      if (
+        shapes[shapeIndex].tool === "TEXT" ||
+        shapes[shapeIndex].tool === "LABEL"
+      ) {
+        updatedShape.text = node.text(); // Ensure the text content is preserved
+        updatedShape.width = node.width() * scaleX; // Update width 
+        updatedShape.height = node.height() * scaleY; // Update height
+      }
+      // Handle scaling for different shapes
+      if (
+        node.width &&
+        node.height &&
+        shapes[shapeIndex].tool === "RECTANGLE"
+      ) {
+        updatedShape.width = node.width() * scaleX;
+        updatedShape.height = node.height() * scaleY;
+      }
+
+      if (node.radius) {
+        updatedShape.radius = node.radius() * Math.max(scaleX, scaleY);
+      }
+
+      if (node.radiusX && node.radiusY) {
+        updatedShape.radiusX = node.radiusX() * scaleX;
+        updatedShape.radiusY = node.radiusY() * scaleY;
+      }
+
+      if (node.points) {
+        const newPoints = node
+          .points()
+          .map((point, index) =>
+            index % 2 === 0 ? point * scaleX : point * scaleY
+          );
+        updatedShape.points = newPoints;
+      }
+
+      if (node.innerRadius && node.outerRadius) {
+        updatedShape.innerRadius = node.innerRadius() * scaleX;
+        updatedShape.outerRadius = node.outerRadius() * scaleY;
+      }
+
+      // Update the shape in the state
+      const updatedShapes = shapes.map((shape, index) =>
+        index === shapeIndex ? updatedShape : shape
+      );
+      setShapes(updatedShapes);
+
+      // Emit the updated shape with the current scale
+      Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
+    } else {
+      node.x(shapes[shapeIndex].x);
+      node.y(shapes[shapeIndex].y);
+      node.scaleX(1);
+      node.scaleY(1);
+    }
+  };
+  const handleTransformEnd = (e) => {
+    console.log("Inside handleTransformEnd");
+    const node = e.target;
+    const shapeId = node.id();
+    let shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    if (shapeIndex === -1) {
+      if (node.parent) {
+        shapeIndex = shapes.findIndex((shape) => shape.id === node.parent.id());
+      }
+    }
+    if (shapeIndex === -1) return;
+    node.rotation(0);
+
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
 
-    // Prepare the updated shape object
     let updatedShape = {
       ...shapes[shapeIndex],
       x: node.x(),
       y: node.y(),
       rotation: node.rotation(),
-      scaleX: scaleX, // Store the current scale factors
+      scaleX: scaleX, 
       scaleY: scaleY,
     };
-    if (shapes[shapeIndex].tool === "TEXT" || shapes[shapeIndex].tool === "LABEL") {
-      // Scale font size based on both scales, but use a minimum to avoid text getting too small
-      const baseFontSize = shapes[shapeIndex].fontSize || 20; // default font size if not set
-      updatedShape.fontSize = Math.max(baseFontSize * scaleY, baseFontSize); // scale font size based on y scale
-      updatedShape.text = node.text(); // Ensure the text content is preserved
-      updatedShape.width = node.width() * scaleX; // Update width if necessary
-      updatedShape.height = node.height() * scaleY; // Update height if necessary
-    }
-    // Handle scaling for different shapes
-    if (node.width && node.height && shapes[shapeIndex].tool === "RECTANGLE") {
-      updatedShape.width = node.width() * scaleX;
-      updatedShape.height = node.height() * scaleY;
-    }
-
-    if (node.radius) {
-      updatedShape.radius = node.radius() * Math.max(scaleX, scaleY);
-    }
-
-    if (node.radiusX && node.radiusY) {
-      updatedShape.radiusX = node.radiusX() * scaleX;
-      updatedShape.radiusY = node.radiusY() * scaleY;
-    }
-
-    if (node.points) {
-      const newPoints = node
-        .points()
-        .map((point, index) =>
-          index % 2 === 0 ? point * scaleX : point * scaleY
-        );
-      updatedShape.points = newPoints;
-    }
-
-    if (node.innerRadius && node.outerRadius) {
-      updatedShape.innerRadius = node.innerRadius() * scaleX;
-      updatedShape.outerRadius = node.outerRadius() * scaleY;
-    }
-
-    // Update the shape in the state
     const updatedShapes = shapes.map((shape, index) =>
       index === shapeIndex ? updatedShape : shape
     );
     setShapes(updatedShapes);
 
-    // Emit the updated shape with the current scale
     Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
   };
-
-  // const onTransform = (e) => {
-  //   const node = e.target;
-  //   console.log(node);
-  //   const shapeId = node.id();
-  //   const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
-  //   if (shapeIndex === -1) return;
-
-  //   // Get the shape's node attributes
-  //   let updatedShape = {
-  //     ...shapes[shapeIndex],
-  //     x: node.x(),
-  //     y: node.y(),
-  //     rotation: node.rotation(),
-  //   };
-
-  //   // Handle scaling for different shapes
-  //   if (node.width && node.height && shapes[shapeIndex].tool==='RECTANGLE') {
-  //     updatedShape.width = node.width() * node.scaleX();
-  //     updatedShape.height = node.height() * node.scaleY();
-  //   }
-
-  //   if (node.radius) {
-  //     updatedShape.radius = node.radius() * Math.max(node.scaleX(), node.scaleY());
-  //   }
-
-  //   if (node.radiusX && node.radiusY) {
-  //     updatedShape.radiusX = node.radiusX() * node.scaleX();
-  //     updatedShape.radiusY = node.radiusY() * node.scaleY();
-  //   }
-
-  //   if (node.points) {
-  //     const scaleX = node.scaleX();
-  //     const scaleY = node.scaleY();
-
-  //     // Adjust points according to the scale
-  //     const newPoints = node.points().map((point, index) =>
-  //       index % 2 === 0 ? point * scaleX : point * scaleY
-  //     );
-
-  //     updatedShape.points = newPoints;
-  //     console.log(updatedShape.points,node.points());
-
-  //   }
-
-  //   if(node.innerRadius && node.outerRadius)
-  //   {
-  //     updatedShape.innerRadius = node.innerRadius() * node.scaleX();
-  //     updatedShape.outerRadius = node.outerRadius() * node.scaleY();
-  //   }
-  //   // Update the shape in the state
-  //   const updatedShapes = shapes.map((shape, index) =>
-  //     index === shapeIndex ? updatedShape : shape
-  //   );
-
-  //   setShapes(updatedShapes);
-
-  //   // Emit the updated shape to the server and other users
-  //   Id.socket.emit("shapeTransformed", { updatedShape }, Id.roomId);
-  // };
-
   // Listen for dragging (moving shapes)
-  const onDragMove = (e) => {
+  const handleOnDragMove = (e) => {
+    console.log("inside handleOnDragMove");
     const node = e.target;
     const shapeId = node.id();
-    const shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    let shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    if (shapeIndex === -1) {
+      if (node.parent) {
+        shapeIndex = shapes.findIndex((shape) => shape.id === node.parent.id());
+      }
+    }
     if (shapeIndex === -1) return;
+    if (shapes[shapeIndex].tool === "IMAGE") return;
 
     const updatedShape = {
       ...shapes[shapeIndex],
@@ -907,23 +1038,66 @@ function Whiteboard({ users, isAdmin }) {
     );
 
     setShapes(updatedShapes);
-    // Id.socket.current.emit("shapeDragged", { updatedShape }, Id.roomId);
     Id.socket.emit("shapeDragged", { updatedShape }, Id.roomId);
-
-    console.log("Hiiiiiiiiiiiiiiiiiiiiiiiiii!44444444444444444");
   };
+  const handleDragEnd = (e) => {
+    console.log("Inside handleDragEnd");
+    const node = e.target;
+    const shapeId = node.id();
+    let shapeIndex = shapes.findIndex((shape) => shape.id === shapeId);
+    if (shapeIndex === -1) {
+      if (node.parent) {
+        shapeIndex = shapes.findIndex((shape) => shape.id === node.parent.id());
+      }
+    }
+    if (shapeIndex === -1) return;
+    const updatedShape = {
+      ...shapes[shapeIndex],
+      x: node.x(),
+      y: node.y(),
+    };
 
+    const updatedShapes = shapes.map((shape, index) =>
+      index === shapeIndex ? updatedShape : shape
+    );
+
+    setShapes(updatedShapes);
+    Id.socket.emit("shapeDragged", { updatedShape }, Id.roomId);
+  };
   const handleDownload = () => {
-    // Get the canvas as a data URL
-    const dataURL = stageRef.current.toDataURL(); // Assuming you have a ref to the Konva stage
+    const dataURL = stageRef.current.toDataURL();
 
-    // Create a temporary anchor element to trigger the download
     const link = document.createElement("a");
     link.href = dataURL;
-    link.download = "canvas-image.png"; // You can change the file name and extension as needed
+    link.download = "canvas-image.png"; 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const renderTiledBackground = () => {
+    const tileWidth = backgroundImage.width; // Original image width
+    const tileHeight = backgroundImage.height; // Original image height
+    const tiles = [];
+
+    for (let x = -10010; x < 10000; x += tileWidth) {
+      for (let y = -10010; y < 10000; y += tileHeight) {
+        tiles.push(
+          <KonvaImage
+            key={`${x}-${y}`}
+            image={backgroundImage}
+            width={tileWidth}
+            height={tileHeight}
+            x={x} 
+            y={y}
+            scaleX={1} 
+            scaleY={1}
+          />
+        );
+      }
+    }
+
+    return tiles;
   };
 
   const drawShape = (shape) => {
@@ -944,9 +1118,29 @@ function Whiteboard({ users, isAdmin }) {
       innerRadius,
       outerRadius,
       strokeWidth,
-      fontSize
+      fontSize,
+      src,
     } = shape;
     switch (tool) {
+      case ACTIONS.IMAGE: {
+        return null;
+        // <KonvaImage
+        //   key={id}
+        //   id={id}
+        //   src={src} 
+        //   crossOrigin="Anonymous"
+        //   x={x}
+        //   y={y}
+        //   image={shape.image}
+        //   width={width}
+        //   height={height}
+        //   draggable={isDraggable}
+        //   onClick={onClick}
+        //   onTransformEnd={handleTransformEnd}
+        //   onDragEnd={handleDragEnd}
+        //   ref={nodeRef}
+        // />
+      }
       case ACTIONS.CIRCLE:
         return (
           <Ellipse
@@ -954,7 +1148,6 @@ function Whiteboard({ users, isAdmin }) {
             id={id}
             x={x}
             y={y}
-            // radius={radiusX || radiusY ? undefined: Math.abs(width)}
             radiusX={radiusX ? radiusX : Math.abs(width)}
             radiusY={radiusY ? radiusY : Math.abs(width)}
             fill={fillColor}
@@ -962,8 +1155,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -981,8 +1174,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1000,8 +1193,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1015,8 +1208,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1031,8 +1224,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1043,7 +1236,7 @@ function Whiteboard({ users, isAdmin }) {
             id={id}
             x={x}
             y={y}
-            numPoints={5}
+            numPoints={3}
             innerRadius={innerRadius ? innerRadius : Math.abs(width)}
             outerRadius={outerRadius ? outerRadius : Math.abs(height)}
             fill={fillColor}
@@ -1051,8 +1244,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1070,8 +1263,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1090,8 +1283,8 @@ function Whiteboard({ users, isAdmin }) {
             strokeWidth={strokeWidth}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1103,41 +1296,42 @@ function Whiteboard({ users, isAdmin }) {
             x={x}
             y={y}
             text={text || "Sample Text"}
-            fontSize={fontSize||20}
-            width={width?width:undefined}
-            height={height?height:undefined}
+            fontSize={fontSize}
+            width={width ? width : undefined}
+            height={height ? height : undefined}
             fill={strokeColor}
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
             onDblClick={handleDoubleClick}
           />
         );
       case ACTIONS.LABEL:
         return (
-          <Label
-            key={id}
-            id={id}
-            x={x}
-            y={y}
-            draggable={isDraggable}
-            onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
-            ref={nodeRef}
-            onDblClick={handleDoubleClick}
-          >
-            <Tag fill={fillColor} />
-            <Text
-              text={text || "Label Text"}
-              fontSize={fontSize||20}
-              width={width?width:undefined}
-              height={height?height:undefined}
-              fill={strokeColor}
+          <Group key={id} id={id} ref={nodeRef} onDblClick={handleDoubleClick}>
+            <Rect
+              x={x}
+              y={y}
+              fill={fillColor}
+              width={width ? width : undefined}
+              height={height ? height : undefined}
             />
-          </Label>
+            <Text
+              x={x}
+              y={y}
+              text={text || "Label Text"}
+              fontSize={fontSize}
+              width={width ? width : undefined}
+              height={height ? height : undefined}
+              fill={strokeColor}
+              onTransform={handleOnTransform}
+              onDragMove={handleOnDragMove}
+              draggable={isDraggable}
+              onClick={onClick}
+            />
+          </Group>
         );
 
       case ACTIONS.SCRIBBLE:
@@ -1153,8 +1347,8 @@ function Whiteboard({ users, isAdmin }) {
             lineJoin="round"
             draggable={isDraggable}
             onClick={onClick}
-            onTransform={onTransform}
-            onDragMove={onDragMove}
+            onTransform={handleOnTransform}
+            onDragMove={handleOnDragMove}
             ref={nodeRef}
           />
         );
@@ -1164,14 +1358,14 @@ function Whiteboard({ users, isAdmin }) {
   };
 
   const clearHandler = (e) => {
-    setAction(ACTIONS.CLEAR);
     setShapes([]);
+    transformerRef.current.nodes([]);
     Id.socket.emit("clearShapes", Id.roomId);
   };
 
-  const scaleBy = 1.05; // Zoom factor
-  const MIN_ZOOM = 0.000001;
-  const MAX_ZOOM = 50;
+  const scaleBy = 0.09; // Zoom factor
+  const MIN_ZOOM = 0.7;
+  const MAX_ZOOM = 1.4;
 
   // Emit to socket when zooming
   const handleWheel = (e) => {
@@ -1196,77 +1390,197 @@ function Whiteboard({ users, isAdmin }) {
       y: pointer.y - mousePointTo.y * finalScale,
     };
 
-    stage.position(newPos);
-    stage.batchDraw();
-
-    // Emit zoom and position to server
+    setPosition(newPos);
+    setScale(finalScale);
     Id.socket.emit(
       "canvasZoomed",
       { scale: finalScale, position: newPos },
       Id.roomId
     );
-  };
-
-  // Emit to socket when dragging
-  const handleDragMove = (e) => {
-    const stage = stageRef.current;
-    const { x, y } = stage.position();
-
-    const newPos = { x, y };
-
-    // Emit the new position to the server
-    Id.socket.emit("canvasDragged", { position: newPos }, Id.roomId);
-
-    // Optional logic to restrict panning limits
+    setBackgroundTiles(renderTiledBackground());
     stage.position(newPos);
     stage.batchDraw();
   };
 
-  // const scaleBy = 1.05; // Zoom factor
-  // const MIN_ZOOM = 0.5;
-  // const MAX_ZOOM = 10;
+  const handleDragMove = (e) => {
+    const stage = stageRef.current;
 
-  // const handleWheel = (e) => {
-  //   e.evt.preventDefault();
+    const { x, y } = stage.position();
 
-  //   const stage = stageRef.current;
-  //   const oldScale = stage.scaleX();
-  //   const pointer = stage.getPointerPosition();
+    const newPos = { x, y };
+    if (stage) {
+      setPosition(newPos);
+    }
+    Id.socket.emit("canvasDragged", { position: newPos }, Id.roomId);
+    console.log("inside handleDragMove");
+    setBackgroundTiles(renderTiledBackground());
+    stage.position(newPos);
+    stage.batchDraw();
+  };
 
-  //   const mousePointTo = {
-  //     x: (pointer.x - stage.x()) / oldScale,
-  //     y: (pointer.y - stage.y()) / oldScale,
-  //   };
+  const deleteShape = () => {
+    if (action === ACTIONS.SELECT) {
+      const updatedShapes = shapes.filter((shape) => shape.id !== deleteItem);
 
-  //   const newScale = e.evt.deltaY > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-  //   const finalScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newScale));
+      setShapes(updatedShapes);
+      transformerRef.current.nodes([]);
+      Id.socket.emit("shapeUpdated", { shapes: updatedShapes }, Id.roomId);
+    }
+  };
 
-  //   stage.scale({ x: finalScale, y: finalScale });
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      let newImage = {};
+      reader.onload = () => {
+        const img = new window.Image();
+        img.src = reader.result;
+        img.onload = () => {
+          newImage = {
+            id: `image-${shapes.length + 1}`,
+            type: "image",
+            image: img,
+            src: reader.result, // Set the image src to the data URL
+            width: 200,
+            height: 200,
+            x: 50,
+            y: 50,
+            points: [50, 50, 50, 50],
+            fillColor,
+            strokeColor,
+            strokeWidth,
+            tool: action,
+            text: action === ACTIONS.TEXT ? "Sample Text" : "",
+            nodeRef: React.createRef(),
+          };
 
-  //   const newPos = {
-  //     x: pointer.x - mousePointTo.x * finalScale,
-  //     y: pointer.y - mousePointTo.y * finalScale,
-  //   };
+          setShapes((prevShapes) => {
+            const updatedShapes = [...prevShapes, newImage];
 
-  //   stage.position(newPos);
-  //   stage.batchDraw();
-  // };
+            Id.socket.emit(
+              "shapeCreated",
+              { shape: { ...newImage, nodeRef: null } },
+              Id.roomId
+            );
 
-  // const handleDragMove = (e) => {
-  //   // To allow panning while dragging the stage
-  //   const stage = stageRef.current;
-  //   const { x, y } = stage.position();
-  //   const newPos = { x, y };
+            return updatedShapes;
+          });
 
-  //   // Optional logic to restrict panning limits
-  //   stage.position(newPos);
-  //   stage.batchDraw();
-  // };
+          console.log("Image upload and socket emit completed.");
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const keyDownHandler = (e) => {
+    if (!e.ctrlKey) {
+      return; // Exit the handler if Ctrl is not pressed
+    }
+
+    const key = e.key.toLowerCase(); 
+    console.log("Key pressed:", e.key);
+    console.log("Ctrl pressed:", e.ctrlKey);
+
+    switch (key) {
+      case "c": {
+        setAction(ACTIONS.CIRCLE);
+        break;
+      }
+      case "e": {
+        setAction(ACTIONS.ELLIPSE);
+        break;
+      }
+      case "r": {
+        setAction(ACTIONS.RECTANGLE);
+        break;
+      }
+      case "l": {
+        setAction(ACTIONS.LINE);
+        break;
+      }
+      case "a": {
+        setAction(ACTIONS.ARROW);
+        break;
+      }
+      case "s": {
+        setAction(ACTIONS.STAR);
+        break;
+      }
+      case "t": {
+        setAction(ACTIONS.TEXT);
+        break;
+      }
+      case "p": {
+        setAction(ACTIONS.SELECT);
+        break;
+      }
+      case "d": {
+        setAction(ACTIONS.DRAG);
+        break;
+      }
+      case "z": {
+        e.preventDefault();
+        const undoButton = document.getElementById("UNDO");
+        if (undoButton) {
+          undoButton.click();
+        }
+        break;
+      }
+      case "y": {
+        e.preventDefault();
+        const redoButton = document.getElementById("REDO");
+        if (redoButton) {
+          redoButton.click();
+        }
+        break;
+      }
+      case "delete": {
+        const deleteButton = document.getElementById("DELETE");
+        if (deleteButton) {
+          deleteButton.click();
+        }
+        break;
+      }
+      case "escape": {
+        clearHandler();
+        break;
+      }
+      case "f": {
+        document.getElementById("fill-color").click();
+        break;
+      }
+      case "b": {
+        document.getElementById("stroke-color").click();
+        break;
+      }
+      case "+": {
+        setStrokeWidth(Math.max(20, strokeWidth + 1));
+        break;
+      }
+      case "-": {
+        setStrokeWidth(Math.max(1, strokeWidth - 1));
+        break;
+      }
+      case "i": {
+        document.getElementById("image-upload-input").click();
+        setAction(ACTIONS.IMAGE);
+        break;
+      }
+      case "enter": {
+        handleDownload();
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  };
 
   return (
-    <div className="whiteboard-container">
+    <div>
       <div className="toolbar">
-        {/* Add more toolbar buttons here to select actions */}
         <button onClick={clearHandler} className="icon-btn" id="CLEAR">
           <i class="fa-solid fa-arrows-rotate"></i>
         </button>
@@ -1278,17 +1592,14 @@ function Whiteboard({ users, isAdmin }) {
         >
           <i className="fa-solid fa-arrow-pointer"></i>
         </button>
-        {/* <button
-          onClick={() => setAction(ACTIONS.GROUPSELECT)}
-          className="icon-btn"
-          id="group-selector"
+        <button
+          class="icon-btn"
+          id="DRAG"
+          onClick={() => setAction(ACTIONS.DRAG)}
         >
-          <img
-            src={`${process.env.PUBLIC_URL}/group-selector.png`}
-            alt="Icon"
-            className="icon"
-          />
-        </button> */}
+          <i class="fa-regular fa-hand"></i>
+        </button>
+
         <button onClick={handleUndo} className="icon-btn" id="UNDO">
           <i class="fa-solid fa-rotate-left"></i>
         </button>
@@ -1404,6 +1715,9 @@ function Whiteboard({ users, isAdmin }) {
             onChange={(e) => setStrokeColor(e.target.value)}
           />
         </div>
+        <button onClick={deleteShape} className="icon-btn" id="DELETE">
+          <i class="fa-solid fa-trash"></i>
+        </button>
         <div className="stroke-width-slider">
           <button className="icon-btn" id="slider">
             <i className="fas fa-sliders-h"></i>
@@ -1420,13 +1734,7 @@ function Whiteboard({ users, isAdmin }) {
         {/* <button class="icon-btn" id="import-image">
           <i class="fas fa-image"></i>
         </button> */}
-        <button
-          class="icon-btn"
-          id="DRAG"
-          onClick={() => setAction(ACTIONS.DRAG)}
-        >
-          <i class="fa-regular fa-hand"></i>
-        </button>
+
         <button
           className="export-btn"
           id="export-image"
@@ -1441,109 +1749,148 @@ function Whiteboard({ users, isAdmin }) {
           </button>
           {isDropdownOpen && (
             <div className="dropdown-content">
-              {users.map((user) => (
-                <div key={user.id} className="dropdown-item">
-                  <span onClick={() => setSelectedUser(user)}>{user.name}</span>
-                  {isAdmin && selectedUser === user && (
-                    <div className="admin-controls">
-                      <button
-                        onClick={() => {
-                          Id.setCurrentUser(user);
-                          handleUserAction("call");
-                          Id.setCall(1);
-                        }}
-                        className="admin-action-btn"
-                      >
-                        <i className="fas fa-phone"></i> Call
-                      </button>
-                      <button
-                        onClick={() => {
-                          Id.setCurrentUser(user);
-                          handleUserAction("grantPermission");
-                        }}
-                        className="admin-action-btn"
-                      >
-                        <i className="fas fa-check"></i> Grant Permission
-                      </button>
-                      <button
-                        onClick={() => {
-                          Id.setCurrentUser(user);
-                          handleUserAction("revokePermission");
-                        }}
-                        className="admin-action-btn"
-                      >
-                        <i className="fas fa-times"></i> Revoke Permission
-                      </button>
-                      <button
-                        onClick={() => {
-                          Id.setCurrentUser(user);
-                          handleUserAction("kickUser");
-                        }}
-                        className="admin-action-btn"
-                      >
-                        <i className="fas fa-user-times"></i> Kick Out
-                      </button>
+              {users.map(
+                (userr) =>
+                  user.email !== userr.email && (
+                    <div key={userr.email} className="dropdown-item">
+                      <span onClick={() => setSelectedUser(userr)}>
+                        {userr.name}
+                      </span>
+                      {isAdmin && selectedUser === userr && (
+                        <div className="admin-controls">
+                          <button
+                            onClick={() => {
+                              Id.setCurrentUser(userr);
+                              handleUserAction("grantPermission");
+                            }}
+                            className="admin-action-btn"
+                          >
+                            <i className="fas fa-check"></i> Grant Permission
+                          </button>
+                          <button
+                            onClick={() => {
+                              Id.setCurrentUser(userr);
+                              handleUserAction("revokePermission");
+                            }}
+                            className="admin-action-btn"
+                          >
+                            <i className="fas fa-times"></i> Revoke Permission
+                          </button>
+                          <button
+                            onClick={() => {
+                              Id.setCurrentUser(userr);
+                              handleUserAction("kickUser");
+                            }}
+                            className="admin-action-btn"
+                          >
+                            <i className="fas fa-user-times"></i> Kick Out
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  )
+              )}
             </div>
           )}
         </div>
       </div>
 
-      <div className="board">
-        <div id="whiteboard" ref={containerRef}>
-          <Stage
-            ref={stageRef}
-            width={dimensions.width}
-            height={dimensions.height}
-            onPointerDown={onPointerDown}
-            onPointerUp={onPointerUp}
-            onPointerMove={onPointerMove}
-            onMouseDown={(e) => {
-              if (e.target === e.target.getStage()) {
-                transformerRef.current.nodes([]);
-              }
+      <div id="whiteboard" ref={containerRef}>
+        <Stage
+          ref={stageRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerMove={onPointerMove}
+          onMouseDown={(e) => {
+            if (e.target === e.target.getStage()) {
+              transformerRef.current.nodes([]);
+            }
+          }}
+          onClick={onClick}
+          draggable={action === ACTIONS.DRAG}
+          onWheel={handleWheel}
+          onDragMove={handleDragMove}
+        >
+          <Layer ref={layerRef}>
+            {backgroundTiles}
+            {shapes.map((shape) => drawShape(shape))}
+            {selectionBox && (
+              <Rect
+                x={selectionBox.x}
+                y={selectionBox.y}
+                width={selectionBox.width}
+                height={selectionBox.height}
+                stroke="black"
+                strokeWidth={1}
+                dash={[10, 5]}
+                fill="rgba(0,0,255,0.1)"
+              />
+            )}
+            <Transformer ref={transformerRef} />
+
+            {/* Render other users' pointers and usernames */}
+            {otherUsersPointers &&
+              Object.entries(otherUsersPointers).map(([email, pointer]) => {
+                const actionImage = actionImages[pointer.action]; 
+
+                return (
+                  actionImage instanceof HTMLImageElement && ( 
+                    <React.Fragment key={email}>
+                      <KonvaImage
+                        x={pointer.x}
+                        y={pointer.y}
+                        image={actionImage} 
+                        width={20}
+                        height={20}
+                        offsetX={15} // Center the image
+                        offsetY={15}
+                      />
+
+                      <Rect
+                        x={pointer.x}
+                        y={pointer.y}
+                        width={20}
+                        height={20}
+                        fill={getUserColor(email)}
+                        opacity={0.5} // opacity for effect
+                        offsetX={15}
+                        offsetY={15}
+                      />
+
+                      {/* Render the username below the pointer */}
+                      <Text
+                        x={pointer.x}
+                        y={pointer.y - 25} // Display the name below the image
+                        text={email} 
+                        fontSize={18}
+                        fill={getUserColor(email)}
+                        align="center"
+                      />
+                    </React.Fragment>
+                  )
+                );
+              })}
+          </Layer>
+        </Stage>
+
+        {editingText && (
+          <textarea
+            type="text"
+            value={textInput}
+            onChange={handleTextChange}
+            onBlur={handleTextBlur}
+            autoFocus
+            style={{
+              position: "absolute",
+              top: stageRef.current?.getPointerPosition()?.y || 0,
+              left: stageRef.current?.getPointerPosition()?.x || 0,
+              fontSize: `${20}px`,
+              border: "1px solid black",
             }}
-            draggable={action === ACTIONS.DRAG}
-            onWheel={handleWheel}
-            onDragMove={handleDragMove}
-          >
-            <Layer>
-              {shapes.map((shape) => drawShape(shape))}
-              {selectionBox && (
-                <Rect
-                  x={selectionBox.x}
-                  y={selectionBox.y}
-                  width={selectionBox.width}
-                  height={selectionBox.height}
-                  stroke="black"
-                  strokeWidth={1}
-                  dash={[10, 5]}
-                  fill="rgba(0,0,255,0.1)"
-                />
-              )}
-              <Transformer ref={transformerRef} />
-            </Layer>
-          </Stage>
-          {editingText && (
-            <textarea
-              type="text"
-              value={textInput}
-              onChange={handleTextChange}
-              onBlur={handleTextBlur}
-              autoFocus
-              style={{
-                position: "absolute",
-                top: stageRef.current?.getPointerPosition()?.y || 0,
-                left: stageRef.current?.getPointerPosition()?.x || 0,
-                fontSize: `${20}px`,
-                border: "1px solid black",
-              }}
-            />
-          )}
-        </div>
+          />
+        )}
       </div>
     </div>
   );

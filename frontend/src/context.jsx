@@ -26,7 +26,7 @@ export const SocketProvider = (props) => {
         setCurrentUser,
         host,
         setHost,
-        call,
+        call, 
         quit,
         setCall,
         setQuit,

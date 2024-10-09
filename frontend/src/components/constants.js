@@ -6,7 +6,7 @@ export const ACTIONS = {
     SCRIBBLE: "SCRIBBLE",
     ARROW: "ARROW",
     STAR:"STAR",
-    RING:"RIGN",
+    RING:"RING",
     ARC:"ARC",
     TEXT:"TEXT",
     LABEL:"LABEL",
@@ -16,4 +16,6 @@ export const ACTIONS = {
     GROUPSELECT:"GROUPSELECT",
     CLEAR:"CLEAR",
     DRAG:"DRAG",
+    DELETE:"DELETE",
+    IMAGE:"IMAGE"
   };
