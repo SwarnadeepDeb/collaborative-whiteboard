@@ -1,13 +1,23 @@
 ---
 
+
+## Demo Video
+
+<div align="center">
+    <a href="https://youtu.be/dljldK3OzcM">
+        <img src="frontend/public/images/Thumbnail.png" alt="Collaborative Whiteboard Demo" width="80%">
+    </a>
+</div>
+
+## Overview
+
+The **Collaborative Whiteboard** is a real-time, interactive drawing application designed for seamless collaboration among multiple users. Whether you're brainstorming ideas, conducting online meetings, or teaching remotely, this whiteboard allows users to draw shapes, write text, and share their canvas in real time. The app supports advanced real-time communication features such as group chats and video calls, making it a complete solution for online collaboration.
+
 # Collaborative Whiteboard
 
 ![Collaborative Whiteboard Screenshot 1](frontend/public/images/ProjectScreenshot.png)
 ![Collaborative Whiteboard Screenshot 2](frontend/public/images/ProjectScreenshot1.png)
 
-## Overview
-
-The **Collaborative Whiteboard** is a real-time, interactive drawing application designed for seamless collaboration among multiple users. Whether you're brainstorming ideas, conducting online meetings, or teaching remotely, this whiteboard allows users to draw shapes, write text, and share their canvas in real time. The app supports advanced real-time communication features such as group chats and video calls, making it a complete solution for online collaboration.
 
 ## Key Features
 
@@ -47,7 +57,7 @@ The **Collaborative Whiteboard** is a real-time, interactive drawing application
 - **Auth0**: Authentication for secure access to chat and video call functionalities.
 
 ### Backend
-- **Node.js & Express.js**: Server-side logic, handling API requests, and managing real-time events.
+- **Node.js & Express.js**: Server-side logic, handling requests, and managing real-time events.
 - **Socket.io**: Ensuring synchronized whiteboard updates across users.
 
 ## Project Setup
@@ -55,7 +65,6 @@ The **Collaborative Whiteboard** is a real-time, interactive drawing application
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v14 or later)
 - [Auth0 Account](https://auth0.com/)
-- **Mediasoup setup**: Configured SFU server for optimized video calls
 
 ### Installation
 
@@ -81,7 +90,6 @@ The **Collaborative Whiteboard** is a real-time, interactive drawing application
    ```env
    AUTH0_CLIENT_ID=<your-auth0-client-id>
    AUTH0_CLIENT_SECRET=<your-auth0-client-secret>
-   MEDIASOUP_LISTEN_IP=<mediasoup-sfu-listen-ip>
    ```
 
 5. Run the application:
@@ -113,7 +121,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 For any inquiries or collaboration opportunities, please contact me via email:
 
 **Swarnadeep Deb**  
-swarnadeepdebdevelopment@gmail.com 
+swarnadeepdebdevelopment@gmail.com
 
 ---
-
