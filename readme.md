@@ -1,60 +1,61 @@
-
 ---
 
 # Collaborative Whiteboard
 
-![Collaborative Whiteboard](images/ProjectImage.png)
+![Collaborative Whiteboard Screenshot 1](frontend/public/images/ProjectScreenshot.png)
+![Collaborative Whiteboard Screenshot 2](frontend/public/images/ProjectScreenshot1.png)
 
 ## Overview
 
-The **Collaborative Whiteboard** is a real-time, interactive drawing application designed for seamless collaboration among multiple users. Whether you're brainstorming ideas, conducting online meetings, this whiteboard allows users to draw shapes, write text, and share their canvas in real time. The app supports real-time communication features such as group chats and video calls, making it a complete solution for online collaboration.
+The **Collaborative Whiteboard** is a real-time, interactive drawing application designed for seamless collaboration among multiple users. Whether you're brainstorming ideas, conducting online meetings, or teaching remotely, this whiteboard allows users to draw shapes, write text, and share their canvas in real time. The app supports advanced real-time communication features such as group chats and video calls, making it a complete solution for online collaboration.
 
 ## Key Features
 
 ### 1. **Real-time Collaboration**
    - Multiple users can draw on the same canvas simultaneously.
-   - Users can share a room via room IDs to collaborate in different groups.
-   - Socket.io-based real-time synchronization of shapes and transformations.
-  
+   - Users can join groups through unique room IDs to collaborate across different sessions.
+   - Socket.io-based real-time synchronization of shapes, transformations, and actions.
+
 ### 2. **Shape and Text Tools**
    - Draw shapes such as circles, rectangles, ellipses, lines, and arrows.
-   - Transformations: Scale and resize shapes in real-time.
+   - Transformations: Scale and resize shapes in real-time with immediate updates for all users.
 
 ### 3. **Zoom and Pan**
-   - Zooming and scrolling for navigating large whiteboard canvases.
+   - Infinite zooming and panning for seamless navigation across large whiteboard canvases.
 
 ### 4. **Undo/Redo**
-   - Efficient undo/redo functionality with real-time updates for all users.
+   - Efficient undo/redo functionality, synchronized in real-time across all users.
 
-### 5. **Video Call Integration**
-   - Built-in video call functionality using WebRTC for face-to-face collaboration.
-   - Admins can initiate or end calls and control user permissions during sessions.
+### 5. **Video Call Integration with Mediasoup SFU**
+   - Built-in video call feature using a Single Forwarding Unit (SFU) architecture via Mediasoup, ensuring optimized video stream handling for all users in the room.
+   - Admin controls for initiating and managing calls, and controlling user permissions within sessions.
 
 ### 6. **Group Chat**
    - Secure, socket-based group chat feature with user authentication via Auth0.
-   - User avatars displayed beside messages for a personalized chat experience.
+   - User avatars displayed beside messages, providing a personalized chat experience.
 
 ### 7. **Admin Controls**
-   - Admins can manage users, control whiteboard permissions, and kick users if necessary.
+   - Admins can manage users, control whiteboard permissions, initiate and end video calls, and kick users as needed.
 
 ## Tech Stack
 
 ### Frontend
 - **React.js**: Building the interactive user interface.
 - **Konva.js**: Canvas drawing and shape manipulation library for 2D transformations.
-- **Socket.io**: Real-time communication between users and synchronization of drawing events.
-- **WebRTC**: For the integrated video call feature.
-- **Auth0**: Authentication and secure access to chat and video call functionalities.
+- **Socket.io**: Real-time communication for collaborative whiteboard updates.
+- **Mediasoup**: SFU-based WebRTC framework for efficient, scalable video streaming.
+- **Auth0**: Authentication for secure access to chat and video call functionalities.
 
 ### Backend
 - **Node.js & Express.js**: Server-side logic, handling API requests, and managing real-time events.
-- **Socket.io**: Synchronizing real-time whiteboard changes across users.
+- **Socket.io**: Ensuring synchronized whiteboard updates across users.
 
 ## Project Setup
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v14 or later)
 - [Auth0 Account](https://auth0.com/)
+- **Mediasoup setup**: Configured SFU server for optimized video calls
 
 ### Installation
 
@@ -80,6 +81,7 @@ The **Collaborative Whiteboard** is a real-time, interactive drawing application
    ```env
    AUTH0_CLIENT_ID=<your-auth0-client-id>
    AUTH0_CLIENT_SECRET=<your-auth0-client-secret>
+   MEDIASOUP_LISTEN_IP=<mediasoup-sfu-listen-ip>
    ```
 
 5. Run the application:
@@ -114,3 +116,4 @@ For any inquiries or collaboration opportunities, please contact me via email:
 swarnadeepdebdevelopment@gmail.com 
 
 ---
+
